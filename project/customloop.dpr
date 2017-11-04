@@ -10,11 +10,14 @@ uses
 type
   TWindowProc = function(hwnd: HWND; uMsg: UINT; wParam: WPARAM; lParam: LPARAM): Integer; stdcall;
 
+const
+  MaxTimer = 9;
+
 var
   Inited: Boolean = False;
   OldWinProc: Integer = 0;
   MyHandle: HWND;
-  NextTime, FpsCnt: array[0..9] of Double;
+  NextTime, FpsCnt: array[0..MaxTimer] of Double;
   Timers: Integer;
 
 const
@@ -136,7 +139,6 @@ begin
 //      AddKeyboardEvent(0, 4);
 //    WM_ACTIVATEAPP:
 //      AddKeyboardEvent(0, 5);
-
   end;
   Result := TWindowProc(OldWinProc)(hwnd, uMsg, wParam, lParam);
   if Result <> 0 then
@@ -183,7 +185,7 @@ begin
       for Index := 0 to Timers do
       begin
         Cur := NextTime[Index] - NewTime;
-        if (Idx = -1) or (Cur < Min) then
+        if (Cur < Min) or (Idx = -1) then
         begin
           Min := Cur;
           Idx := Index;
@@ -211,6 +213,8 @@ begin
 end;
 
 function Init(h: Double): Double; stdcall;
+const
+  ABOVE_NORMAL_PRIORITY_CLASS = $8000;
 begin
   if Inited then
     Free();
@@ -219,6 +223,8 @@ begin
   OldWinProc := GetWindowLong(MyHandle, GWLP_WNDPROC);
   SetWindowLong(MyHandle, GWLP_WNDPROC, Integer(@MyWindowProc));
   Inited := True;
+  SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
+  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL - 1);
 end;
 
 function Wait(a, b, c, d, e, f, g, h, i, j: Double): Double; stdcall;
@@ -276,7 +282,7 @@ begin
   Dec(Timers);
   NewTime := Integer(timeGetTime());
   for Index := 0 to Timers do
-    NextTime[Index] := NewTime + FpsCnt[Timers];
+    NextTime[Index] := NewTime + FpsCnt[Index];
 end;
 
 function Read(): Double; stdcall;
@@ -289,13 +295,25 @@ begin
     Result := Event[Idx];
 end;
 
+function Drop(i: Double): Double; stdcall;
+var
+  Index: Integer;
+begin
+  Result := 0;
+  Index := Round(i) - 1;
+  if (Index < 0) or (Index > Timers) then
+    Exit;
+  NextTime[Index] := Integer(timeGetTime()) + FpsCnt[Index];
+end;
+
 exports
   Init,
   Free,
   Wait,
   Read,
   Loop,
-  Step;
+  Step,
+  Drop;
 
 begin
 end.
